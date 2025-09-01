@@ -1,9 +1,10 @@
-# streamlit_app.py (VERSIONE FINALE E CORRETTA)
+# streamlit_app.py (VERSIONE FINALE GARANTITA)
 
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 
+# Importa le nostre funzioni dai moduli custom
 import data_handler as dh
 import financial_calculations as fc
 import visualization as viz
@@ -38,13 +39,10 @@ if analyze_button:
             if stock_data is None or stock_data.empty:
                 st.error(f"Impossibile recuperare i dati per il ticker {ticker}. Controlla il simbolo.")
             else:
-                # --- ECCO LA CORREZIONE DEFINITIVA ---
-                # Estraiamo l'ultimo prezzo di chiusura e ci assicuriamo che sia un float Python nativo.
-                price_series = stock_data['Close']
-                if isinstance(price_series, pd.Series):
-                    current_stock_price = price_series.iloc[-1]
-                else:
-                    current_stock_price = float(price_series)
+                # --- ECCO LA CORREZIONE FINALE ---
+                # Usiamo incondizionatamente .iloc[-1] che è il metodo corretto
+                # per estrarre l'ultimo valore da una Series pandas.
+                current_stock_price = stock_data['Close'].iloc[-1]
                 # --- FINE DELLA CORREZIONE ---
 
                 time_to_expiry = (expiration_date - datetime.now().date()).days / 365.0
