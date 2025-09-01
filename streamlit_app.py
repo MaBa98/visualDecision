@@ -1,9 +1,8 @@
-# streamlit_app.py (VERSIONE DEBUG FINALE)
+# streamlit_app.py (VERSIONE FINALE E CORRETTA)
 
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import numpy as np
 
 import data_handler as dh
 import financial_calculations as fc
@@ -14,10 +13,8 @@ st.set_page_config(layout="wide")
 st.title("🔬 Laboratorio di Analisi Opzioni")
 st.markdown("Inserisci i parametri di un'opzione per calcolare IV e Greche, e confrontarla con la volatilità storica del sottostante.")
 
-# --- Sezione di Input nella Sidebar ---
 with st.sidebar:
     st.header("Parametri dell'Opzione")
-    
     ticker = st.text_input("Ticker Sottostante (es. UEN.F)", "UEN.F")
     option_type = st.selectbox("Tipo di Opzione", ["put", "call"], index=1)
     
@@ -32,56 +29,61 @@ with st.sidebar:
     analyze_button = st.button("🚀 Analizza Opzione")
 
 if analyze_button:
-    stock_data = dh.fetch_stock_data(ticker)
-    
-    if stock_data is None or stock_data.empty:
-        st.error(f"Impossibile recuperare i dati per il ticker {ticker}. Controlla il simbolo.")
+    if not all([ticker, strike_price, premium]):
+        st.warning("Per favore, inserisci tutti i parametri richiesti.")
     else:
-        current_stock_price = stock_data['Close'].iloc[-1]
-        time_to_expiry = (expiration_date - datetime.now().date()).days / 365.0
-        
-        # --- Sezione di Debug ---
-        st.subheader("🕵️ Dati Intermedi per il Debug")
-        debug_data = {
-            "Prezzo Sottostante (S)": current_stock_price,
-            "Strike Price (K)": strike_price,
-            "Premio (Target)": premium,
-            "Giorni alla Scadenza": (expiration_date - datetime.now().date()).days,
-            "Tempo alla Scadenza (T)": time_to_expiry,
-        }
-        st.json(debug_data)
-
-        # Testiamo la funzione obiettivo ai limiti dell'intervallo di ricerca
-        low_vol_price = fc.black_scholes_merton(current_stock_price, strike_price, time_to_expiry, risk_free_rate, 1e-6, option_type)
-        high_vol_price = fc.black_scholes_merton(current_stock_price, strike_price, time_to_expiry, risk_free_rate, 5.0, option_type)
-        
-        st.write(f"**Prezzo BSM calcolato con Volatilità quasi zero:** `{low_vol_price:.4f}`")
-        st.write(f"**Prezzo BSM calcolato con Volatilità altissima (500%):** `{high_vol_price:.4f}`")
-        
-        obj_func_low = low_vol_price - premium
-        obj_func_high = high_vol_price - premium
-        
-        st.write(f"**Valore Funzione Obiettivo al limite inferiore (deve essere < 0):** `{obj_func_low:.4f}`")
-        st.write(f"**Valore Funzione Obiettivo al limite superiore (deve essere > 0):** `{obj_func_high:.4f}`")
-        
-        st.markdown("---")
-        
-        # Esegui il calcolo principale
-        try:
-            implied_vol = fc.calculate_implied_volatility(
-                target_price=premium,
-                S=current_stock_price,
-                K=strike_price,
-                T=time_to_expiry,
-                r=risk_free_rate,
-                option_type=option_type
-            )
+        with st.spinner(f"Recupero dati e calcolo in corso per {ticker}..."):
+            stock_data = dh.fetch_stock_data(ticker)
             
-            if pd.isna(implied_vol):
-                 st.error("Impossibile calcolare la Volatilità Implicita. Controlla che il premio sia coerente (es. non troppo basso/alto rispetto alla moneyness).")
+            if stock_data is None or stock_data.empty:
+                st.error(f"Impossibile recuperare i dati per il ticker {ticker}. Controlla il simbolo.")
             else:
-                st.success("Trovata IV!")
-                st.metric("Volatilità Implicita (IV)", f"{implied_vol:.2%}")
+                # --- ECCO LA CORREZIONE DEFINITIVA ---
+                # Estraiamo l'ultimo prezzo di chiusura e ci assicuriamo che sia un float Python nativo.
+                price_series = stock_data['Close']
+                if isinstance(price_series, pd.Series):
+                    current_stock_price = price_series.iloc[-1]
+                else:
+                    current_stock_price = float(price_series)
+                # --- FINE DELLA CORREZIONE ---
 
-        except ValueError as e:
-            st.error(f"Errore durante il calcolo dell'IV: {e}")
+                time_to_expiry = (expiration_date - datetime.now().date()).days / 365.0
+
+                try:
+                    implied_vol = fc.calculate_implied_volatility(
+                        target_price=premium,
+                        S=current_stock_price,
+                        K=strike_price,
+                        T=time_to_expiry,
+                        r=risk_free_rate,
+                        option_type=option_type
+                    )
+                    
+                    if pd.isna(implied_vol):
+                         st.error("Impossibile calcolare la Volatilità Implicita. Controlla che il premio sia coerente (es. non troppo basso/alto rispetto alla moneyness).")
+                    else:
+                        greeks = fc.calculate_greeks(S=current_stock_price, K=strike_price, T=time_to_expiry, r=risk_free_rate, sigma=implied_vol, option_type=option_type)
+                        hv_data = fc.calculate_historical_volatility(stock_data['Close'])
+
+                        st.header(f"Risultati Analisi per {ticker}")
+                        
+                        col1, col2, col3, col4, col5 = st.columns(5)
+                        col1.metric("Prezzo Sottostante (S)", f"{current_stock_price:.2f}")
+                        col2.metric("Volatilità Implicita (IV)", f"{implied_vol:.2%}")
+                        col3.metric("Delta", f"{greeks['delta']:.3f}")
+                        col4.metric("Theta (giornaliero)", f"{greeks['theta_per_day']:.4f}")
+                        col5.metric("Vega (per 1% vol)", f"{greeks['vega']:.4f}")
+                        
+                        st.info(f"**Interpretazione:** Un Delta di **{greeks['delta']:.3f}** ...", icon="🧠")
+                        st.markdown("---")
+                        st.subheader("Confronto IV vs. Volatilità Storica (HV)")
+                        cone_fig = viz.plot_volatility_cone(hv_data, implied_vol, ticker)
+                        st.plotly_chart(cone_fig, use_container_width=True)
+                        st.info("**Interpretazione:** Il grafico mostra l'andamento...", icon="💡")
+
+                except ValueError as e:
+                    if "ArbitrageError" in str(e):
+                        min_price = max(0.0, current_stock_price - strike_price)
+                        st.error(f"**Errore di Pricing Rilevato!** ...", icon="🚨")
+                    else:
+                        st.error(f"Si è verificato un errore inatteso: {e}")
