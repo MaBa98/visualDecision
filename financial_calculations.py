@@ -12,7 +12,26 @@ TRADING_DAYS_PER_YEAR = 252
 def black_scholes_merton(S: float, K: float, T: float, r: float, sigma: float, option_type: str) -> float:
     """
     Calcola il prezzo di un'opzione Europea usando il modello di Black-Scholes-Merton.
+    Versione robusta che gestisce il caso T=0.
     """
+    # --- NUOVO BLOCCO DI CONTROLLO ---
+    # Se il tempo alla scadenza è zero o negativo, il prezzo è solo il valore intrinseco.
+    if T <= 0:
+        if option_type == "call":
+            return max(0.0, S - K)
+        elif option_type == "put":
+            return max(0.0, K - S)
+        else:
+            raise ValueError("Il tipo di opzione deve essere 'call' o 'put'")
+    # --- FINE NUOVO BLOCCO ---
+
+    # Se sigma è quasi zero, il prezzo converge al suo valore intrinseco attualizzato.
+    if sigma <= 1e-6:
+        if option_type == "call":
+            return max(0.0, S - K * np.exp(-r * T))
+        else: # put
+            return max(0.0, K * np.exp(-r * T) - S)
+
     d1 = (np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * np.sqrt(T))
     d2 = d1 - sigma * np.sqrt(T)
     
@@ -22,6 +41,7 @@ def black_scholes_merton(S: float, K: float, T: float, r: float, sigma: float, o
         price = (K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1))
     else:
         raise ValueError("Il tipo di opzione deve essere 'call' o 'put'")
+        
     return price
 
 def calculate_greeks(S: float, K: float, T: float, r: float, sigma: float, option_type: str) -> Dict[str, float]:
